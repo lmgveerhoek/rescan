@@ -1,3 +1,24 @@
+<div align="center">
+  <a href="https://github.com/Pukabyte/rescan">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/logo.png" width="400">
+      <img alt="rescan" src="assets/logo.png" width="400">
+    </picture>
+  </a>
+</div>
+
+<div align="center">
+  <a href="https://github.com/Pukabyte/rescan/stargazers"><img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/Pukabyte/rescan?label=Rescan"></a>
+  <a href="https://github.com/Pukabyte/rescan/issues"><img alt="Issues" src="https://img.shields.io/github/issues/Pukabyte/rescan" /></a>
+  <a href="https://github.com/Pukabyte/rescan/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Pukabyte/rescan"></a>
+  <a href="https://github.com/Pukabyte/rescan/graphs/contributors"><img alt="Contributors" src="https://img.shields.io/github/contributors/Pukabyte/rescan" /></a>
+  <a href="https://discord.gg/vMSnNcd7m5"><img alt="Discord" src="https://img.shields.io/badge/Join%20discord-8A2BE2" /></a>
+</div>
+
+<div align="center">
+  <p>Keep your Plex libraries in sync with your media files.</p>
+</div>
+
 # Rescan
 
 Scan your Plex media libraries for missing files and triggers rescans when needed. 
