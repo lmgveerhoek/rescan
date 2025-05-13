@@ -26,7 +26,7 @@ LOG_LEVEL = config['logs']['loglevel']
 SCAN_INTERVAL = int(config['behaviour']['scan_interval'])
 RUN_INTERVAL = int(config['behaviour']['run_interval'])
 DISCORD_WEBHOOK_URL = config['notifications']['discord_webhook_url']
-DISCORD_AVATAR_URL = "https://raw.githubusercontent.com/Pukabyte/rescan/main/assets/logo.png"
+DISCORD_AVATAR_URL = "https://raw.githubusercontent.com/pukabyte/rescan/master/assets/logo.png"
 DISCORD_WEBHOOK_NAME = "Rescan"
 SYMLINK_CHECK = config.getboolean('behaviour', 'symlink_check', fallback=False)
 NOTIFICATIONS_ENABLED = config.getboolean('notifications', 'enabled', fallback=True)
