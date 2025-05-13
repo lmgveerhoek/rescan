@@ -58,15 +58,20 @@ cp config-example.ini config.ini
 3. Edit `config.ini` with your settings:
 ```ini
 [plex]
-server = http://your-plex-server:32400
-token = your_plex_token
+server = http://localhost:32400
+token = your_plex_token_here
 
 [scan]
-directories = /path/to/your/media
+directories = /path/to/your/media/folder
+
+[behaviour]
+scan_interval = 5
+run_interval = 24
+symlink_check = true
 
 [notifications]
-enabled = true
-discord_webhook_url = your_discord_webhook_url
+enabled = false
+discord_webhook_url = your_discord_webhook_url_here
 ```
 
 4. Run with Docker Compose:
