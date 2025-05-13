@@ -115,7 +115,7 @@ class RunStats:
                 # Add overview
                 embed.add_field(
                     name="📊 Overview",
-                    value=f"Found **{self.total_missing}** missing items from **{self.total_scanned}** scanned files",
+                    value=f"Found **{self.total_missing}** items from **{self.total_scanned}** scanned files",
                     inline=False
                 )
 
@@ -131,7 +131,7 @@ class RunStats:
                 for library, items in self.missing_items.items():
                     embed.add_field(
                         name=f"📁 {library}",
-                        value=f"Missing: **{len(items)}** items",
+                        value=f"Found: **{len(items)}** items",
                         inline=True
                     )
 
