@@ -24,7 +24,9 @@
 Scan your Plex media libraries for missing files and triggers rescans when needed.<br/>
 This is a good once over in case your autoscan tool misses an import or an upgrade from your *arr<br/> 
 It can also provide Discord notification summaries.<br/>
+
 <img alt="rescan" src="assets/discord.png" width="400">
+
 ## Features
 
 - Scans specified directories for media files
