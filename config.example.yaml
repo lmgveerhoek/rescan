@@ -1,0 +1,34 @@
+# ------------------ Plex Settings ------------------
+plex:
+  # URL for the Plex server.
+  server: http://localhost:32400
+  # Your Plex authentication token. You must change this.
+  token: YOUR_PLEX_TOKEN_HERE
+
+# ------------------ Log Settings -------------------
+logs:
+  # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  loglevel: INFO
+
+# ---------------- Behaviour Settings ---------------
+behaviour:
+  # Seconds to wait between triggering Plex library rescans for found items.
+  scan_interval: 5
+  # Hours to wait between full scans of all directories.
+  run_interval: 24
+  # Enable to check for and skip broken symlinks.
+  symlink_check: true
+
+# --------------- Notification Settings -------------
+notifications:
+  # Enable or disable Discord notifications.
+  enabled: true
+  # Your Discord webhook URL. Set to null or remove if not used.
+  discord_webhook_url: null
+
+# ------------------ Scan Settings ------------------
+scan:
+  # A list of directories to scan for media. You must change this.
+  directories:
+    - /path/to/your/media/folder1
+    - /path/to/your/media/folder2 

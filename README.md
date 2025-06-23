@@ -53,33 +53,26 @@ git clone https://github.com/Pukabyte/rescan.git
 cd rescan
 ```
 
-2. Copy the example config:
+2. The application will create a default `config.yaml` in the `/app/config` volume on first run. Alternatively, you can create it manually:
 ```bash
-cp config-example.ini config.ini
+cp config.example.yaml /path/to/your/config/config.yaml
 ```
 
-3. Edit `config.ini` with your settings:
-```ini
-[plex]
-server = http://localhost:32400
-token = your_plex_token_here
+3. Edit `config.yaml` with your settings. You must provide your Plex token and media directories.
 
-[scan]
-directories = /path/to/your/media/folder
-
-[behaviour]
-scan_interval = 5
-run_interval = 24
-symlink_check = true
-
-[notifications]
-enabled = false
-discord_webhook_url = your_discord_webhook_url_here
-```
-
-4. Run with Docker Compose:
-```bash
-docker-compose up -d
+4. Run with Docker Compose (example):
+```yaml
+services:
+  rescan:
+    image: ghcr.io/lmgveerhoek/rescan:latest # Use the image we built
+    container_name: rescan
+    restart: unless-stopped
+    volumes:
+      - /path/to/your/config:/app/config
+      - /path/to/your/media:/media # Ensure this path matches your media folders
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - RESCAN_PLEX__TOKEN=YOUR_PLEX_TOKEN_HERE # Optional: use environment variables
 ```
 
 ### Manual Installation
@@ -97,31 +90,48 @@ pip install -r requirements.txt
 
 3. Copy and configure the config file:
 ```bash
-cp config-example.ini config.ini
+cp config.example.json config.json
 ```
 
-4. Edit `config.ini` with your settings
+4. Edit `config.json` with your settings.
 
 5. Run the script:
 ```bash
-python rescan.py
+python3 rescan.py
 ```
 
 ## Configuration
 
-### Plex Settings
-- `server`: Your Plex server URL (e.g., http://localhost:32400)
-- `token`: Your Plex authentication token
+The application is configured via a `config.json` file or environment variables (prefixed with `RESCAN_`).
 
-### Scan Settings
-- `directories`: Comma-separated list of directories to scan
-- `scan_interval`: Seconds to wait between Plex rescans
-- `run_interval`: Hours between full scans
-- `symlink_check`: Enable/disable broken symlink detection
+### `config.yaml` Example
+```yaml
+# ------------------ Plex Settings ------------------
+plex:
+  server: http://localhost:32400
+  token: YOUR_PLEX_TOKEN_HERE
 
-### Notification Settings
-- `enabled`: Enable/disable Discord notifications
-- `discord_webhook_url`: Your Discord webhook URL
+# ------------------ Log Settings -------------------
+logs:
+  loglevel: INFO
+
+# ---------------- Behaviour Settings ---------------
+behaviour:
+  scan_interval: 5
+  run_interval: 24
+  symlink_check: true
+
+# --------------- Notification Settings -------------
+notifications:
+  enabled: true
+  discord_webhook_url: null # or "https://your_webhook_url"
+
+# ------------------ Scan Settings ------------------
+scan:
+  directories:
+    - /media/movies
+    - /media/tv
+```
 
 ## Discord Notifications
 
@@ -146,4 +156,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Acknowledgments
 
 - [PlexAPI](https://github.com/pkkid/python-plexapi) for Plex server interaction
-- [Discord.py](https://github.com/Rapptz/discord.py) for Discord webhook support 
+- [Discord.py](https://github.com/Rapptz/discord.py) for Discord webhook support
+- [Pydantic](https://pydantic-docs.helpmanual.io/) for robust settings management
+- [PyYAML](https://pyyaml.org/) for YAML parsing. 
