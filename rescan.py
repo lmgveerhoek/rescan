@@ -16,24 +16,18 @@ import asyncio
 import aiohttp
 
 # === CONFIG ===
-
-config = configparser.ConfigParser()
-config.read('config.ini')
-
-PLEX_URL = config['plex']['server']
-TOKEN = config['plex']['token']
-LOG_LEVEL = config['logs']['loglevel']
-SCAN_INTERVAL = int(config['behaviour']['scan_interval'])
-RUN_INTERVAL = int(config['behaviour']['run_interval'])
-DISCORD_WEBHOOK_URL = config['notifications']['discord_webhook_url']
+config = None
+PLEX_URL = None
+TOKEN = None
+LOG_LEVEL = None
+SCAN_INTERVAL = None
+RUN_INTERVAL = None
+DISCORD_WEBHOOK_URL = None
 DISCORD_AVATAR_URL = "https://raw.githubusercontent.com/pukabyte/rescan/master/assets/logo.png"
 DISCORD_WEBHOOK_NAME = "Rescan"
-SYMLINK_CHECK = config.getboolean('behaviour', 'symlink_check', fallback=False)
-NOTIFICATIONS_ENABLED = config.getboolean('notifications', 'enabled', fallback=True)
-
-# Support both comma-separated or line-separated values
-directories_raw = config['scan']['directories']
-SCAN_PATHS = [path.strip() for path in directories_raw.replace('\n', ',').split(',') if path.strip()]
+SYMLINK_CHECK = None
+NOTIFICATIONS_ENABLED = None
+SCAN_PATHS = None
 
 # Media file extensions to look for
 MEDIA_EXTENSIONS = {
@@ -54,12 +48,7 @@ plex = PlexServer(PLEX_URL, TOKEN)
 BOLD = '\033[1m'
 RESET = '\033[0m'
 
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL.upper()),
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%d %b %Y | %I:%M:%S %p'
-)
+# Logger
 logger = logging.getLogger(__name__)
 
 class RunStats:
@@ -457,22 +446,13 @@ def run_scan():
     # Send the final summary to Discord
     asyncio.run(stats.send_discord_summary())
 
-def main():
-    """Main function to run the scanner on a schedule."""
-    logger.info("Starting Plex Missing Files Scanner")
-    logger.info(f"Will run every {BOLD}{RUN_INTERVAL}{RESET} hours")
+def load_config():
+    """Load configuration from config.ini file."""
+    global config, PLEX_URL, TOKEN, LOG_LEVEL, SCAN_INTERVAL, RUN_INTERVAL
+    global DISCORD_WEBHOOK_URL, SYMLINK_CHECK, NOTIFICATIONS_ENABLED, SCAN_PATHS
     
-    # Run immediately on startup
-    run_scan()
+    config = configparser.ConfigParser()
     
-    # Schedule subsequent runs
-    schedule.every(RUN_INTERVAL).hours.do(run_scan)
-    
-    while True:
-        schedule.run_pending()
-        time.sleep(60)  # Check every minute for pending tasks
-
-if __name__ == '__main__':
     # Look for config.ini in mounted volume first, then current directory
     config_paths = ['/app/config/config.ini', 'config.ini']
     config_found = False
@@ -489,4 +469,50 @@ if __name__ == '__main__':
         print("Please ensure config.ini exists in the mounted volume or current directory")
         exit(1)
     
+    # Load all config values
+    try:
+        PLEX_URL = config['plex']['server']
+        TOKEN = config['plex']['token']
+        LOG_LEVEL = config['logs']['loglevel']
+        SCAN_INTERVAL = int(config['behaviour']['scan_interval'])
+        RUN_INTERVAL = int(config['behaviour']['run_interval'])
+        DISCORD_WEBHOOK_URL = config['notifications']['discord_webhook_url']
+        SYMLINK_CHECK = config.getboolean('behaviour', 'symlink_check', fallback=False)
+        NOTIFICATIONS_ENABLED = config.getboolean('notifications', 'enabled', fallback=True)
+        
+        # Support both comma-separated or line-separated values
+        directories_raw = config['scan']['directories']
+        SCAN_PATHS = [path.strip() for path in directories_raw.replace('\n', ',').split(',') if path.strip()]
+        
+    except KeyError as e:
+        print(f"❌ Missing required config section or key: {e}")
+        print("Please check your config.ini file has all required sections")
+        exit(1)
+
+def main():
+    """Main function to run the scanner on a schedule."""
+    # Load configuration first
+    load_config()
+    
+    # Configure logging with loaded LOG_LEVEL
+    logging.basicConfig(
+        level=getattr(logging, LOG_LEVEL.upper()),
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%d %b %Y | %I:%M:%S %p'
+    )
+    
+    logger.info("Starting Plex Missing Files Scanner")
+    logger.info(f"Will run every {BOLD}{RUN_INTERVAL}{RESET} hours")
+    
+    # Run immediately on startup
+    run_scan()
+    
+    # Schedule subsequent runs
+    schedule.every(RUN_INTERVAL).hours.do(run_scan)
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(60)  # Check every minute for pending tasks
+
+if __name__ == '__main__':
     main()
