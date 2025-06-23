@@ -56,9 +56,16 @@ jobs:
           echo "LAST_SEMVER=$LAST_SEMVER" >> $GITHUB_ENV
           
           # Extract version components from the last semantic version
-          MAJOR=$(echo $LAST_SEMVER | sed 's/v\([0-9]*\)\..*/\1/')
-          MINOR=$(echo $LAST_SEMVER | sed 's/v[0-9]*\.\([0-9]*\)\..*/\1/')
-          PATCH=$(echo $LAST_SEMVER | sed 's/v[0-9]*\.[0-9]*\.\([0-9]*\).*/\1/')
+          if [[ "$LAST_SEMVER" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+            MAJOR=${BASH_REMATCH[1]}
+            MINOR=${BASH_REMATCH[2]}
+            PATCH=${BASH_REMATCH[3]}
+          else
+            # Fallback for first release
+            MAJOR=0
+            MINOR=0
+            PATCH=0
+          fi
           
           # Determine version bump
           if [[ "${{ github.event.head_commit.message }}" == *"#major"* ]]; then
