@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.CR_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # Check if this is a scheduled build that was just pushed
       - name: Check for scheduled build push
@@ -101,7 +101,7 @@ jobs:
           git tag -a ${{ env.NEW_TAG }} -m "Release ${{ env.NEW_TAG }}"
           git push https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git ${{ env.NEW_TAG }}
         env:
-          GITHUB_TOKEN: ${{ secrets.CR_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
         if: env.NIGHTLY != 'true' && steps.check_scheduled.outputs.is_scheduled_push != 'true'
@@ -113,7 +113,7 @@ jobs:
           draft: false
           prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.CR_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Docker build and push setup
       - name: Set up QEMU
@@ -130,7 +130,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.CR_PAT }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract Docker metadata
         if: steps.check_scheduled.outputs.is_scheduled_push != 'true'
