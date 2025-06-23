@@ -14,44 +14,80 @@ import discord
 from discord import Webhook, Embed, Color
 import asyncio
 import aiohttp
+from pydantic import BaseModel, HttpUrl, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import List
+import yaml
 
-# === CONFIG ===
-config = None
-PLEX_URL = None
-TOKEN = None
-LOG_LEVEL = None
-SCAN_INTERVAL = None
-RUN_INTERVAL = None
-DISCORD_WEBHOOK_URL = None
+# --- Pydantic Models for Settings ---
+
+class PlexSettings(BaseModel):
+    server: HttpUrl = Field(..., description="URL for the Plex server.")
+    token: str = Field(..., description="Plex authentication token.")
+
+class LogsSettings(BaseModel):
+    loglevel: str = Field("INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
+
+class BehaviourSettings(BaseModel):
+    scan_interval: int = Field(5, description="Seconds to wait between Plex library rescans.")
+    run_interval: int = Field(24, description="Hours to wait between full scans.")
+    symlink_check: bool = Field(True, description="Enable to check for and skip broken symlinks.")
+
+class NotificationsSettings(BaseModel):
+    enabled: bool = Field(True, description="Enable/disable Discord notifications.")
+    discord_webhook_url: HttpUrl | None = Field(None, description="Discord webhook URL for notifications.")
+
+class ScanSettings(BaseModel):
+    directories: List[str] = Field(..., description="List of directories to scan for media.")
+
+class Settings(BaseSettings):
+    """Main settings model, loads from config file and environment variables."""
+    model_config = SettingsConfigDict(
+        env_prefix='RESCAN_',
+        env_nested_delimiter='__',
+        json_file_path_dir="/app/config",
+        json_file="config.json",
+        json_file_encoding='utf-8',
+        validate_default=True
+    )
+
+    plex: PlexSettings
+    logs: LogsSettings
+    behaviour: BehaviourSettings
+    notifications: NotificationsSettings
+    scan: ScanSettings
+    
+# --- Global Variables & Initialization ---
+
+# These will be initialized in main() after settings are loaded
+plex: PlexServer | None = None
+settings: Settings | None = None
+
+# Constants
 DISCORD_AVATAR_URL = "https://raw.githubusercontent.com/pukabyte/rescan/master/assets/logo.png"
 DISCORD_WEBHOOK_NAME = "Rescan"
-SYMLINK_CHECK = None
-NOTIFICATIONS_ENABLED = None
-SCAN_PATHS = None
-
-# Media file extensions to look for
 MEDIA_EXTENSIONS = {
     '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm',
     '.m4v', '.m4p', '.m4b', '.m4r', '.3gp', '.mpg', '.mpeg',
     '.m2v', '.m2ts', '.ts', '.vob', '.iso'
 }
 
-# Global library IDs and path mappings
+# In-memory caches
 library_ids = {}
 library_paths = {}
-library_files = defaultdict(set)  # Cache of files in each library
-
-# Plex server - will be initialized in main()
-plex = None
+library_files = defaultdict(set)
 
 # ANSI escape codes for text formatting
 BOLD = '\033[1m'
 RESET = '\033[0m'
 
-# Logger
+# Logger will be configured in main() after settings are loaded
 logger = logging.getLogger(__name__)
 
+# --- Core Application Logic ---
+
 class RunStats:
+    """A class to track statistics for a single scan run."""
     def __init__(self):
         self.start_time = datetime.now()
         self.missing_items = defaultdict(list)
@@ -77,22 +113,22 @@ class RunStats:
     def increment_broken_symlinks(self):
         self.broken_symlinks += 1
 
-    def get_run_time(self):
-        return datetime.now() - self.start_time
+    def get_run_time(self) -> str:
+        return str(datetime.now() - self.start_time)
 
     async def send_discord_summary(self):
-        if not NOTIFICATIONS_ENABLED:
+        if not settings.notifications.enabled:
             logger.info("📢 Notifications are disabled in config.ini")
             return
             
-        if not DISCORD_WEBHOOK_URL:
+        if not settings.notifications.discord_webhook_url:
             logger.warning("Discord webhook URL not configured. Skipping notification.")
             return
 
         try:
             # Create webhook client with aiohttp session
             async with aiohttp.ClientSession() as session:
-                webhook = Webhook.from_url(DISCORD_WEBHOOK_URL, session=session)
+                webhook = Webhook.from_url(str(settings.notifications.discord_webhook_url), session=session)
 
                 # Create embed
                 embed = Embed(
@@ -255,22 +291,25 @@ def get_library_ids():
         lib_title = section.title
         library_ids[lib_type] = lib_key
         
-        # Get the path for this library
         for location in section.locations:
             library_paths[location] = lib_key
             logger.debug(f"Found library '{lib_title}' (ID: {lib_key}) at path: {location}")
 
     return library_ids
 
-def get_library_id_for_path(file_path):
+def get_library_id_for_path(file_path: str) -> tuple[str | None, str | None]:
     """Get the library section ID for a given file path."""
-    # Get all library sections
-    url = f"{PLEX_URL}/library/sections"
-    params = {'X-Plex-Token': TOKEN}
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-    root = ET.fromstring(response.content)
+    url = f"{str(settings.plex.server).rstrip('/')}/library/sections"
+    params = {'X-Plex-Token': settings.plex.token}
     
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        root = ET.fromstring(response.content)
+    except requests.RequestException as e:
+        logger.error(f"Failed to get library sections from Plex: {e}")
+        return None, None
+
     # Find matching sections
     matching_sections = []
     for section in root.findall('Directory'):
@@ -307,7 +346,7 @@ def get_library_id_for_path(file_path):
     logger.warning(f"No matching library found for path: {file_path}")
     return None, None
 
-def cache_library_files(library_id):
+def cache_library_files(library_id: str):
     """Cache all files in a library section."""
     if library_id in library_files:
         logger.debug(f"Using cached files for library {BOLD}{library_id}{RESET}...")
@@ -342,7 +381,7 @@ def cache_library_files(library_id):
         if library_id in library_files:
             del library_files[library_id]
 
-def is_in_plex(file_path):
+def is_in_plex(file_path: str) -> bool:
     """Check if a file exists in Plex by searching in the appropriate library section."""
     # Get the library ID for this path
     library_id, library_title = get_library_id_for_path(file_path)
@@ -358,19 +397,23 @@ def is_in_plex(file_path):
         logger.debug(f"Found in cache: {BOLD}{file_path}{RESET}")
     return is_found
 
-def scan_folder(library_id, folder_path):
+def scan_folder(library_id: str, folder_path: str):
     """Trigger a library scan for a specific folder."""
-    # Ensure library_id is a string
-    library_id = str(library_id)
     encoded_path = quote(folder_path)
-    url = f"{PLEX_URL}/library/sections/{library_id}/refresh?path={encoded_path}&X-Plex-Token={TOKEN}"
+    url = f"{str(settings.plex.server).rstrip('/')}/library/sections/{library_id}/refresh?path={encoded_path}&X-Plex-Token={settings.plex.token}"
     logger.debug(f"Scan URL: {url}")
-    response = requests.get(url)
-    logger.info(f"🔎 Scan triggered for: {BOLD}{folder_path}{RESET}")
-    logger.info(f"⏳ Waiting {BOLD}{SCAN_INTERVAL}{RESET} seconds before next scan")
-    time.sleep(SCAN_INTERVAL)  # Wait between scans
+    
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        logger.info(f"🔎 Scan triggered for: {BOLD}{folder_path}{RESET}")
+        scan_interval = settings.behaviour.scan_interval
+        logger.info(f"⏳ Waiting {BOLD}{scan_interval}{RESET} seconds before next scan.")
+        time.sleep(scan_interval)
+    except requests.RequestException as e:
+        logger.error(f"Failed to trigger scan for '{folder_path}': {e}")
 
-def is_broken_symlink(file_path):
+def is_broken_symlink(file_path: str) -> bool:
     """Check if a file is a broken symlink."""
     if not os.path.islink(file_path):
         return False
@@ -397,28 +440,27 @@ def run_scan():
 
     scanned_folders = set()
 
-    for SCAN_PATH in SCAN_PATHS:
-        logger.info(f"\nScanning directory: {BOLD}{SCAN_PATH}{RESET}")
+    for scan_path in settings.scan.directories:
+        logger.info(f"\nScanning directory: {BOLD}{scan_path}{RESET}")
 
-        if not os.path.isdir(SCAN_PATH):
-            error_msg = f"Directory not found: {SCAN_PATH}"
+        if not os.path.isdir(scan_path):
+            error_msg = f"Directory not found: {scan_path}"
             logger.error(error_msg)
             stats.add_error(error_msg)
             continue
 
-        for root, dirs, files in os.walk(SCAN_PATH):
+        for root, _, files in os.walk(scan_path):
             for file in files:
                 if file.startswith('.'):
                     continue  # skip hidden/system files
 
-                file_ext = os.path.splitext(file)[1].lower()
-                if file_ext not in MEDIA_EXTENSIONS:
+                if os.path.splitext(file)[1].lower() not in MEDIA_EXTENSIONS:
                     continue  # skip non-media files
 
                 file_path = os.path.join(root, file)
                 
                 # Check for broken symlinks if enabled
-                if SYMLINK_CHECK and is_broken_symlink(file_path):
+                if settings.behaviour.symlink_check and is_broken_symlink(file_path):
                     warning_msg = f"⏩ Skipping broken symlink: {file_path}"
                     logger.warning(warning_msg)
                     stats.increment_broken_symlinks()
@@ -446,81 +488,93 @@ def run_scan():
     # Send the final summary to Discord
     asyncio.run(stats.send_discord_summary())
 
-def load_config():
-    """Load configuration from config.ini file."""
-    global config, PLEX_URL, TOKEN, LOG_LEVEL, SCAN_INTERVAL, RUN_INTERVAL
-    global DISCORD_WEBHOOK_URL, SYMLINK_CHECK, NOTIFICATIONS_ENABLED, SCAN_PATHS, plex
+# --- Application Entrypoint ---
+
+def load_and_validate_settings() -> Settings | None:
+    """Loads settings and creates a default config if one doesn't exist."""
+    config_dir = "/app/config"
+    # Check for both .yaml and .yml extensions
+    possible_filenames = ["config.yaml", "config.yml"]
     
-    config = configparser.ConfigParser()
-    
-    # Look for config.ini in mounted volume first, then current directory
-    config_paths = ['/app/config/config.ini', 'config.ini']
-    config_found = False
-    
-    for config_path in config_paths:
-        if os.path.exists(config_path):
-            config.read(config_path)
-            print(f"✅ Using config from: {config_path}")
-            config_found = True
+    config_to_load = None
+    # Check for config in the docker-mounted volume first
+    for filename in possible_filenames:
+        docker_config_file = os.path.join(config_dir, filename)
+        if os.path.exists(docker_config_file):
+            config_to_load = docker_config_file
             break
+            
+    # If not found in docker volume, check local directory
+    if not config_to_load:
+        for filename in possible_filenames:
+            if os.path.exists(filename):
+                config_to_load = filename
+                break
+
+    if config_to_load:
+        try:
+            with open(config_to_load, 'r', encoding='utf-8') as f:
+                config_data = yaml.safe_load(f)
+                return Settings.model_validate(config_data)
+        except Exception as e:
+            # Pydantic will raise a validation error with details
+            print(f"❌ Error loading configuration from '{config_to_load}':\n{e}")
+            return None
+
+    # --- Create a default config if none found ---
+    default_config_path = os.path.join(config_dir, "config.yaml") if os.path.isdir(config_dir) else "config.yaml"
+    print(f"⚠️ No configuration file found. Creating a default at '{default_config_path}'.")
     
-    if not config_found:
-        print("❌ Error: config.ini not found in any expected location")
-        print("Please ensure config.ini exists in the mounted volume or current directory")
-        exit(1)
+    default_settings = {
+        "plex": {"server": "http://localhost:32400", "token": "YOUR_PLEX_TOKEN_HERE"},
+        "logs": {"loglevel": "INFO"},
+        "behaviour": {"scan_interval": 5, "run_interval": 24, "symlink_check": True},
+        "notifications": {"enabled": True, "discord_webhook_url": None},
+        "scan": {"directories": ["/path/to/your/media/folder1", "/path/to/your/media/folder2"]}
+    }
     
-    # Load all config values
     try:
-        PLEX_URL = config['plex']['server']
-        TOKEN = config['plex']['token']
-        LOG_LEVEL = config['logs']['loglevel']
-        SCAN_INTERVAL = int(config['behaviour']['scan_interval'])
-        RUN_INTERVAL = int(config['behaviour']['run_interval'])
-        DISCORD_WEBHOOK_URL = config['notifications']['discord_webhook_url']
-        SYMLINK_CHECK = config.getboolean('behaviour', 'symlink_check', fallback=False)
-        NOTIFICATIONS_ENABLED = config.getboolean('notifications', 'enabled', fallback=True)
-        
-        # Support both comma-separated or line-separated values
-        directories_raw = config['scan']['directories']
-        SCAN_PATHS = [path.strip() for path in directories_raw.replace('\n', ',').split(',') if path.strip()]
-        
-        # Initialize Plex server after config is loaded
-        plex = PlexServer(PLEX_URL, TOKEN)
-        print(f"✅ Connected to Plex server: {PLEX_URL}")
-        
-    except KeyError as e:
-        print(f"❌ Missing required config section or key: {e}")
-        print("Please check your config.ini file has all required sections")
-        exit(1)
-    except Exception as e:
-        print(f"❌ Failed to connect to Plex server: {e}")
-        print("Please check your Plex server URL and token")
-        exit(1)
+        os.makedirs(os.path.dirname(default_config_path), exist_ok=True)
+        with open(default_config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(default_settings, f, indent=4, default_flow_style=False, sort_keys=False)
+        print("✅ Default configuration created. Please edit it with your details and restart.")
+    except IOError as e:
+        print(f"❌ Failed to write default configuration file: {e}")
+    
+    return None
 
 def main():
-    """Main function to run the scanner on a schedule."""
-    # Load configuration first
-    load_config()
-    
-    # Configure logging with loaded LOG_LEVEL
+    """Main function to initialize and run the scanner on a schedule."""
+    global settings, plex
+
+    settings = load_and_validate_settings()
+    if not settings:
+        exit(1)
+
     logging.basicConfig(
-        level=getattr(logging, LOG_LEVEL.upper()),
+        level=getattr(logging, settings.logs.loglevel.upper(), logging.INFO),
         format='%(asctime)s [%(levelname)s] %(message)s',
         datefmt='%d %b %Y | %I:%M:%S %p'
     )
     
-    logger.info("Starting Plex Missing Files Scanner")
-    logger.info(f"Will run every {BOLD}{RUN_INTERVAL}{RESET} hours")
+    logger.info("🚀 Starting Rescan...")
+
+    try:
+        plex = PlexServer(str(settings.plex.server), settings.plex.token)
+        logger.info(f"✅ Connected to Plex server: {settings.plex.server}")
+    except Exception as e:
+        logger.error(f"❌ Failed to connect to Plex server: {e}", exc_info=True)
+        exit(1)
+
+    logger.info(f"🕒 Scan will run every {settings.behaviour.run_interval} hours.")
     
-    # Run immediately on startup
     run_scan()
     
-    # Schedule subsequent runs
-    schedule.every(RUN_INTERVAL).hours.do(run_scan)
+    schedule.every(settings.behaviour.run_interval).hours.do(run_scan)
     
     while True:
         schedule.run_pending()
-        time.sleep(60)  # Check every minute for pending tasks
+        time.sleep(60)
 
 if __name__ == '__main__':
     main()
