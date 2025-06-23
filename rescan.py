@@ -41,8 +41,8 @@ library_ids = {}
 library_paths = {}
 library_files = defaultdict(set)  # Cache of files in each library
 
-# Initialize Plex server
-plex = PlexServer(PLEX_URL, TOKEN)
+# Plex server - will be initialized in main()
+plex = None
 
 # ANSI escape codes for text formatting
 BOLD = '\033[1m'
@@ -449,7 +449,7 @@ def run_scan():
 def load_config():
     """Load configuration from config.ini file."""
     global config, PLEX_URL, TOKEN, LOG_LEVEL, SCAN_INTERVAL, RUN_INTERVAL
-    global DISCORD_WEBHOOK_URL, SYMLINK_CHECK, NOTIFICATIONS_ENABLED, SCAN_PATHS
+    global DISCORD_WEBHOOK_URL, SYMLINK_CHECK, NOTIFICATIONS_ENABLED, SCAN_PATHS, plex
     
     config = configparser.ConfigParser()
     
@@ -484,9 +484,17 @@ def load_config():
         directories_raw = config['scan']['directories']
         SCAN_PATHS = [path.strip() for path in directories_raw.replace('\n', ',').split(',') if path.strip()]
         
+        # Initialize Plex server after config is loaded
+        plex = PlexServer(PLEX_URL, TOKEN)
+        print(f"✅ Connected to Plex server: {PLEX_URL}")
+        
     except KeyError as e:
         print(f"❌ Missing required config section or key: {e}")
         print("Please check your config.ini file has all required sections")
+        exit(1)
+    except Exception as e:
+        print(f"❌ Failed to connect to Plex server: {e}")
+        print("Please check your Plex server URL and token")
         exit(1)
 
 def main():
