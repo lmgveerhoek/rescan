@@ -473,9 +473,20 @@ def main():
         time.sleep(60)  # Check every minute for pending tasks
 
 if __name__ == '__main__':
-    # Check if config exists
-    if not os.path.exists('config.ini'):
-        logger.error("❌ config.ini not found. Please copy config-example.ini to config.ini and configure it.")
+    # Look for config.ini in mounted volume first, then current directory
+    config_paths = ['/app/config/config.ini', 'config.ini']
+    config_found = False
+    
+    for config_path in config_paths:
+        if os.path.exists(config_path):
+            config.read(config_path)
+            print(f"✅ Using config from: {config_path}")
+            config_found = True
+            break
+    
+    if not config_found:
+        print("❌ Error: config.ini not found in any expected location")
+        print("Please ensure config.ini exists in the mounted volume or current directory")
         exit(1)
     
     main()
